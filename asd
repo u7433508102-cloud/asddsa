@@ -7,7 +7,7 @@ local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
-local cheatActive = true               -- master switch (End key)
+local cheatActive = true
 local currentTarget = nil
 local isLocking = false
 local triggerEnabled = false
@@ -18,13 +18,9 @@ local BaseSpeed = 16
 local lastVisibleTarget = nil
 local lastTriggerClick = 0
 local superJumpActive = false
-local camlockEnabled = false
-local camlockTarget = nil
 local snaplineDrawing = nil
 
-local originalAutoRotate = true
-
--- ========== CLEANUP (END KEY) ==========
+-- ========== CLEANUP (END key) ==========
 local function Cleanup()
     cheatActive = false
     Config['Silent Aim']['Enabled'] = false
@@ -34,23 +30,11 @@ local function Cleanup()
     SpeedEnabled = false
     isLocking = false
     currentTarget = nil
-    camlockEnabled = false
-    camlockTarget = nil
     triggerEnabled = false
 
-    -- Restore camera and AutoRotate
-    pcall(function()
-        if Camera then
-            Camera.CameraType = Enum.CameraType.Custom
-        end
-    end)
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    if hum then
-        hum.WalkSpeed = 16
-        hum.AutoRotate = originalAutoRotate
-    end
+    if hum then hum.WalkSpeed = 16 end
 
-    -- Kill all drawings
     if fovBox then pcall(function() fovBox:Remove() end) end
     if snaplineDrawing then pcall(function() snaplineDrawing:Remove() end) end
     for _, esp in pairs(espLabels) do
@@ -58,10 +42,8 @@ local function Cleanup()
     end
     espLabels = {}
 
-    -- Destroy GUI
     pcall(function() gui:Destroy() end)
 
-    -- Try to restore old metatable
     pcall(function()
         local mt = getrawmetatable(game)
         if mt and oldIndex then
@@ -113,9 +95,7 @@ local function canSeeTarget(part)
                         state == Enum.HumanoidStateType.FallingDown)
     local root = character:FindFirstChild("HumanoidRootPart")
     local velY = root and math.abs((root.AssemblyLinearVelocity or root.Velocity or Vector3.new()).Y) or 0
-    if (isAirborne or velY > 8) and isLocking then
-        return true
-    end
+    if (isAirborne or velY > 8) and isLocking then return true end
     local origin = Camera.CFrame.Position
     local direction = (part.Position - origin).Unit * (part.Position - origin).Magnitude
     local raycastParams = RaycastParams.new()
@@ -127,34 +107,24 @@ local function canSeeTarget(part)
 end
 
 local function getClosestBodyPart(character)
-    local closestPart = nil
-    local shortestDist = math.huge
-    local bodyParts = {
-        character:FindFirstChild("Head"),
-        character:FindFirstChild("UpperTorso"),
-        character:FindFirstChild("HumanoidRootPart"),
-        character:FindFirstChild("LowerTorso"),
-        character:FindFirstChild("LeftUpperArm"),
-        character:FindFirstChild("RightUpperArm"),
-        character:FindFirstChild("LeftLowerArm"),
-        character:FindFirstChild("RightLowerArm"),
-        character:FindFirstChild("LeftHand"),
-        character:FindFirstChild("RightHand"),
-        character:FindFirstChild("LeftUpperLeg"),
-        character:FindFirstChild("RightUpperLeg"),
-        character:FindFirstChild("LeftLowerLeg"),
-        character:FindFirstChild("RightLowerLeg"),
-        character:FindFirstChild("LeftFoot"),
-        character:FindFirstChild("RightFoot"),
+    local closestPart, shortestDist = nil, math.huge
+    local parts = {
+        character:FindFirstChild("Head"), character:FindFirstChild("UpperTorso"),
+        character:FindFirstChild("HumanoidRootPart"), character:FindFirstChild("LowerTorso"),
+        character:FindFirstChild("LeftUpperArm"), character:FindFirstChild("RightUpperArm"),
+        character:FindFirstChild("LeftLowerArm"), character:FindFirstChild("RightLowerArm"),
+        character:FindFirstChild("LeftHand"), character:FindFirstChild("RightHand"),
+        character:FindFirstChild("LeftUpperLeg"), character:FindFirstChild("RightUpperLeg"),
+        character:FindFirstChild("LeftLowerLeg"), character:FindFirstChild("RightLowerLeg"),
+        character:FindFirstChild("LeftFoot"), character:FindFirstChild("RightFoot"),
     }
-    for _, part in pairs(bodyParts) do
+    for _, part in ipairs(parts) do
         if part then
             local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
-            local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            local dist = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
+            local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+            local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
             if dist < shortestDist then
-                shortestDist = dist
-                closestPart = part
+                shortestDist = dist; closestPart = part
             end
         end
     end
@@ -167,26 +137,21 @@ local function isMouseInFOV(character)
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     local head = character:FindFirstChild("Head")
     if not rootPart or not head then return false end
-    local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-    local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+    local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
+    local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0,3,0))
     if not headOnScreen or not legOnScreen then return false end
     local height = math.abs(headPos.Y - legPos.Y)
     local width = height / 2
     local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
     local padding = 10
-    local topLeftX = rootPos.X - width/2 - padding
-    local topLeftY = headPos.Y - padding
-    local bottomRightX = rootPos.X + width/2 + padding
-    local bottomRightY = legPos.Y + padding
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    return mousePos.X >= topLeftX and mousePos.X <= bottomRightX and mousePos.Y >= topLeftY and mousePos.Y <= bottomRightY
+    return mousePos.X >= rootPos.X - width/2 - padding and mousePos.X <= rootPos.X + width/2 + padding
+            and mousePos.Y >= headPos.Y - padding and mousePos.Y <= legPos.Y + padding
 end
 
--- Target selection for silent aim (closest to screen center)
 local function findClosestTarget()
-    local closestTarget = nil
-    local shortestDistance = math.huge
-    for _, player in pairs(Players:GetPlayers()) do
+    local closestTarget, shortestDistance = nil, math.huge
+    for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             if not isPlayerKnockedOrKO(player) then
                 local targetPart = nil
@@ -195,15 +160,12 @@ local function findClosestTarget()
                 else
                     targetPart = player.Character:FindFirstChild(Config['Silent Aim']['Hit Part'])
                 end
-                if targetPart and canSeeTarget(targetPart) then
-                    local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                    if isMouseInFOV(player.Character) then
-                        local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-                        local dist = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
-                        if dist < shortestDistance then
-                            shortestDistance = dist
-                            closestTarget = targetPart
-                        end
+                if targetPart and canSeeTarget(targetPart) and isMouseInFOV(player.Character) then
+                    local screenPos = Camera:WorldToViewportPoint(targetPart.Position)
+                    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                    if dist < shortestDistance then
+                        shortestDistance = dist; closestTarget = targetPart
                     end
                 end
             end
@@ -212,131 +174,41 @@ local function findClosestTarget()
     return closestTarget
 end
 
--- Camlock target finder
-local function findCamlockTarget()
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local bestPlayer, bestDist = nil, math.huge
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            if not isPlayerKnockedOrKO(player) then
-                local part = player.Character:FindFirstChild("HumanoidRootPart")
-                if part and canSeeTarget(part) then
-                    local screenPos = Camera:WorldToViewportPoint(part.Position)
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPlayer = player
-                    end
-                end
-            end
-        end
-    end
-    return bestPlayer
-end
-
 local function getPredictedPosition(part, config)
     if not config['Use Prediction'] then return part.Position end
-    local velocity = part.AssemblyLinearVelocity or part.Velocity or Vector3.new(0, 0, 0)
-    local prediction = config['Prediction']
-    if type(prediction) == "table" then
-        local predX = prediction['X'] or 0.133
-        local predY = prediction['Y'] or 0.133
-        local predZ = prediction['Z'] or 0.133
-        return part.Position + Vector3.new(velocity.X * predX, velocity.Y * predY, velocity.Z * predZ)
+    local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.zero
+    local pred = config['Prediction']
+    if type(pred) == "table" then
+        return part.Position + Vector3.new(vel.X * (pred.X or 0.133), vel.Y * (pred.Y or 0.133), vel.Z * (pred.Z or 0.133))
     else
-        if prediction == 0 then prediction = 0.1245 end
-        return part.Position + (velocity * prediction)
-    end
-end
-
-local function applyCameraLock()
-    if not camlockEnabled then return end
-
-    if isSelfKnocked() then
-        camlockTarget = nil
-        return
-    end
-
-    -- Validate current target
-    if camlockTarget then
-        local char = camlockTarget.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum or hum.Health <= 0 or isPlayerKnockedOrKO(camlockTarget) then
-            camlockTarget = nil
-        end
-    end
-
-    -- Lock onto new target if needed
-    if not camlockTarget then
-        camlockTarget = findCamlockTarget()
-    end
-    if not camlockTarget then return end
-
-    local part = camlockTarget.Character:FindFirstChild("HumanoidRootPart")
-    if not part then return end
-
-    local targetPos = getPredictedPosition(part, Config['Camera Lock'])
-    local camCF = Camera.CFrame
-    local targetCF = CFrame.new(camCF.Position, targetPos)
-    local smooth = Config['Camera Lock']['Smoothing']
-    local alpha = 1 / smooth
-    Camera.CFrame = camCF:Lerp(targetCF, math.min(alpha, 1))
-end
-
--- ========== ANIMATION FREEZE FIX: simulate MoveDirection ==========
-local function updateMoveDirection()
-    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    if not humanoid or not Camera then return end
-
-    local move = Vector3.zero
-    -- Adjust keys if you use different bindings (e.g., arrow keys)
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += Camera.CFrame.LookVector  end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= Camera.CFrame.LookVector  end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= Camera.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += Camera.CFrame.RightVector end
-
-    move = Vector3.new(move.X, 0, move.Z)   -- keep it flat
-    if move.Magnitude > 0 then
-        humanoid.MoveDirection = move.Unit
-    else
-        humanoid.MoveDirection = Vector3.zero
+        if pred == 0 then pred = 0.1245 end
+        return part.Position + vel * pred
     end
 end
 
 -- ========== DRAWING OBJECTS ==========
 if not fovBox then
-    fovBox = Drawing.new("Square")
-    fovBox.Visible = false
-    fovBox.Thickness = Config['FOV']['Thickness']
-    fovBox.Color = Config['FOV']['Color']
-    fovBox.Filled = false
-    fovBox.Size = Vector2.new(0, 0)
+    fovBox = Drawing.new("Square"); fovBox.Visible = false; fovBox.Thickness = Config['FOV']['Thickness']
+    fovBox.Color = Config['FOV']['Color']; fovBox.Filled = false; fovBox.Size = Vector2.new(0,0)
 end
 
 local function updateFOVBox()
-    if not Config['FOV']['Enabled'] or not Config['FOV']['Visible'] then
-        fovBox.Visible = false
-        return
-    end
+    if not Config['FOV']['Enabled'] or not Config['FOV']['Visible'] then fovBox.Visible = false; return end
     if currentTarget then
-        local character = currentTarget.Parent
-        if character then
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            local head = character:FindFirstChild("Head")
-            if rootPart and head then
-                local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-                local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
-                if headOnScreen and legOnScreen then
-                    local height = math.abs(headPos.Y - legPos.Y)
-                    local width = height / 2
-                    local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
-                    local padding = 10
-                    local topLeft = Vector2.new(rootPos.X - width/2 - padding, headPos.Y - padding)
-                    fovBox.Size = Vector2.new(width + padding * 2, height + padding * 2)
-                    fovBox.Position = topLeft
-                    fovBox.Visible = true
-                    return
+        local char = currentTarget.Parent
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local head = char:FindFirstChild("Head")
+            if root and head then
+                local hpos, hon = Camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
+                local lpos, lon = Camera:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
+                if hon and lon then
+                    local h = math.abs(hpos.Y - lpos.Y); local w = h/2
+                    local rpos = Camera:WorldToViewportPoint(root.Position)
+                    local pad = 10
+                    fovBox.Size = Vector2.new(w + pad*2, h + pad*2)
+                    fovBox.Position = Vector2.new(rpos.X - w/2 - pad, hpos.Y - pad)
+                    fovBox.Visible = true; return
                 end
             end
         end
@@ -345,57 +217,42 @@ local function updateFOVBox()
 end
 
 local function TriggerBot()
-    if not Config['Trigger Bot']['Enabled'] then return end
-    if not triggerEnabled then return end
+    if not Config['Trigger Bot']['Enabled'] or not triggerEnabled then return end
     if tick() - lastTriggerClick < Config['Trigger Bot']['Delay'] then return end
     if not currentTarget then return end
-    local character = currentTarget.Parent
-    if not character then return end
-    local player = Players:GetPlayerFromCharacter(character)
-    if not player then return end
-    if isPlayerKnockedOrKO(player) then return end
-    if not canSeeTarget(currentTarget) then return end
-    if Config['FOV']['Enabled'] and not isMouseInFOV(character) then return end
-    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-    if not tool then return end
+    local char = currentTarget.Parent; if not char then return end
+    local player = Players:GetPlayerFromCharacter(char); if not player then return end
+    if isPlayerKnockedOrKO(player) or not canSeeTarget(currentTarget) then return end
+    if Config['FOV']['Enabled'] and not isMouseInFOV(char) then return end
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool"); if not tool then return end
     if Config['Trigger Bot']['Specific Weapons']['Enabled'] then
-        local weaponValid = false
-        for _, weaponName in pairs(Config['Trigger Bot']['Specific Weapons']['Weapons']) do
-            local cleanName = weaponName:gsub("%[", ""):gsub("%]", "")
-            if tool.Name == weaponName or tool.Name:find(cleanName) then
-                weaponValid = true
-                break
-            end
+        local ok = false
+        for _, wn in ipairs(Config['Trigger Bot']['Specific Weapons']['Weapons']) do
+            if tool.Name == wn:gsub("[%[%]]", "") or tool.Name:find(wn:gsub("[%[%]]", "")) then ok = true break end
         end
-        if not weaponValid then return end
+        if not ok then return end
     end
     tool:Activate()
     lastTriggerClick = tick()
 end
 
--- ========== UNIVERSAL SILENT AIM HOOK ==========
+-- ========== UNIVERSAL SILENT AIM HOOK (third‑person, like mouse) ==========
 local oldIndex = getrawmetatable(game).__index
 setreadonly(getrawmetatable(game), false)
 getrawmetatable(game).__index = function(self, key)
     if not cheatActive or not Config['Silent Aim']['Enabled'] or not self:IsA("Mouse") then
         return oldIndex(self, key)
     end
-    if key ~= "Hit" and key ~= "Target" then
-        return oldIndex(self, key)
-    end
+    if key ~= "Hit" and key ~= "Target" then return oldIndex(self, key) end
     if not currentTarget then return oldIndex(self, key) end
-    local char = currentTarget.Parent
-    if not char then return oldIndex(self, key) end
+    local char = currentTarget.Parent; if not char then return oldIndex(self, key) end
     local player = Players:GetPlayerFromCharacter(char)
     if not player or isPlayerKnockedOrKO(player) or not canSeeTarget(currentTarget) then
         return oldIndex(self, key)
     end
-    if Config['FOV']['Enabled'] and not isMouseInFOV(char) then
-        return oldIndex(self, key)
-    end
+    if Config['FOV']['Enabled'] and not isMouseInFOV(char) then return oldIndex(self, key) end
     if key == "Hit" then
-        local hitPos = getPredictedPosition(currentTarget, Config['Silent Aim'])
-        return CFrame.new(hitPos)
+        return CFrame.new(getPredictedPosition(currentTarget, Config['Silent Aim']))
     else
         return currentTarget
     end
@@ -411,8 +268,8 @@ hookfunction(math.random, function(...)
             if Config['Spread']['Specific Weapons']['Enabled'] then
                 local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
                 if tool then
-                    for _, weapon in pairs(Config['Spread']['Specific Weapons']['Weapons']) do
-                        if tool.Name == weapon then return oldRandom(...) * (Config['Spread']['Amount']/100) end
+                    for _, wn in ipairs(Config['Spread']['Specific Weapons']['Weapons']) do
+                        if tool.Name == wn then return oldRandom(...) * (Config['Spread']['Amount']/100) end
                     end
                 end
             else return oldRandom(...) * (Config['Spread']['Amount']/100) end
@@ -426,8 +283,7 @@ local function addESPToPlayer(player)
     if player == LocalPlayer then return end
     local esp = { player = player, nameTag = Drawing.new("Text") }
     esp.nameTag.Size = 14; esp.nameTag.Center = true; esp.nameTag.Outline = true
-    esp.nameTag.OutlineColor = Color3.fromRGB(0, 0, 0)
-    esp.nameTag.Color = Config['Visual Awareness']['Color']
+    esp.nameTag.OutlineColor = Color3.new(0,0,0); esp.nameTag.Color = Config['Visual Awareness']['Color']
     esp.nameTag.Visible = false; esp.nameTag.ZIndex = 1000
     espLabels[player.UserId] = esp
 end
@@ -536,9 +392,6 @@ RunService.RenderStepped:Connect(function()
             snaplineDrawing.Visible = onScreen
         else snaplineDrawing.Visible = false end
     else snaplineDrawing.Visible = false end
-
-    applyCameraLock()
-    updateMoveDirection()   -- ANIMATION FREEZE FIX
 end)
 
 -- ========== INPUT HANDLING ==========
@@ -585,27 +438,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Super Jump']] then
         superJumpActive = not superJumpActive
-        print("Super Jump: " .. (superJumpActive and "ON" or "OFF"))
-    end
-
-    if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Camera Lock']] then
-        camlockEnabled = not camlockEnabled
-        camlockTarget = nil
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-        if camlockEnabled then
-            Camera.CameraType = Enum.CameraType.Scriptable
-            if hum then
-                originalAutoRotate = hum.AutoRotate
-                hum.AutoRotate = false
-            end
-            print("Camlock ON")
-        else
-            Camera.CameraType = Enum.CameraType.Custom
-            if hum then
-                hum.AutoRotate = originalAutoRotate
-            end
-            print("Camlock OFF")
-        end
     end
 end)
 
@@ -613,9 +445,6 @@ UserInputService.InputEnded:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Target Lock']['Key']] then
         if Config['Keybinds']['Target Lock']['Mode'] == 'Hold' then isLocking = false; currentTarget = nil; lastVisibleTarget = nil end
-    end
-    if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Trigger Bot']['Key']] then
-        if Config['Keybinds']['Trigger Bot']['Mode'] == 'Hold' then triggerEnabled = false end
     end
 end)
 
@@ -627,7 +456,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == Enum.KeyCode[Config['Infinite Range']['Key']] then
         infRangeActive = not infRangeActive
-        print("Infinite Range: " .. (infRangeActive and "ON" or "OFF"))
     end
 end)
 RunService.RenderStepped:Connect(function()
@@ -645,7 +473,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== GUI (PIXEL-COMPACT) ==========
+-- ========== GUI ==========
 local gui = Instance.new("ScreenGui")
 gui.Parent = game.CoreGui
 
@@ -698,13 +526,6 @@ game:GetService("RunService").RenderStepped:Connect(function()
         table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font><font color="rgb(102,178,255)"> [ON]</font>')
     else
         table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font>')
-    end
-
-    if camlockEnabled then
-        local name = camlockTarget and (camlockTarget.DisplayName ~= "" and camlockTarget.DisplayName or camlockTarget.Name) or "none"
-        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font><font color="rgb(102,178,255)"> [' .. name .. ']</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font>')
     end
 
     text.Text = table.concat(lines, "\n")
