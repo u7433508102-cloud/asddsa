@@ -236,7 +236,7 @@ local function TriggerBot()
     lastTriggerClick = tick()
 end
 
--- ========== UNIVERSAL SILENT AIM HOOK (third‑person, like mouse) ==========
+-- ========== UNIVERSAL SILENT AIM HOOK ==========
 local oldIndex = getrawmetatable(game).__index
 setreadonly(getrawmetatable(game), false)
 getrawmetatable(game).__index = function(self, key)
@@ -481,7 +481,7 @@ local text = Instance.new("TextLabel")
 text.Parent = gui
 text.AnchorPoint = Vector2.new(0.5, 1)
 text.Position = UDim2.new(0.5, 0, 1, -80)
-text.Size = UDim2.new(0, 200, 0, 130)
+text.Size = UDim2.new(0, 200, 0, 110)
 text.BackgroundTransparency = 1
 text.TextXAlignment = Enum.TextXAlignment.Center
 text.TextYAlignment = Enum.TextYAlignment.Bottom
