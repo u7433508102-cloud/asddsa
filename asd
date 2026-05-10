@@ -7,7 +7,7 @@ local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
-local cheatActive = true
+local cheatActive = true               -- press End to destroy
 local currentTarget = nil
 local isLocking = false
 local triggerEnabled = false
@@ -473,20 +473,20 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== GUI ==========
+-- ========== OLD GUI (SOURCE SANS SEMIBOLD, SIZE 19) ==========
 local gui = Instance.new("ScreenGui")
 gui.Parent = game.CoreGui
 
 local text = Instance.new("TextLabel")
 text.Parent = gui
 text.AnchorPoint = Vector2.new(0.5, 1)
-text.Position = UDim2.new(0.5, 0, 1, -80)
-text.Size = UDim2.new(0, 200, 0, 110)
+text.Position = UDim2.new(0.5, 0, 1, -110)
+text.Size = UDim2.new(0, 260, 0, 180)
 text.BackgroundTransparency = 1
 text.TextXAlignment = Enum.TextXAlignment.Center
 text.TextYAlignment = Enum.TextYAlignment.Bottom
-text.Font = Enum.Font.Code
-text.TextSize = 16
+text.Font = Enum.Font.SourceSansSemibold
+text.TextSize = 19
 text.RichText = true
 text.TextStrokeTransparency = 0
 text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
