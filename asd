@@ -22,7 +22,7 @@ local camlockEnabled = false
 local camlockTarget = nil
 local snaplineDrawing = nil
 
-local originalAutoRotate = true         -- for freeze fix
+local originalAutoRotate = true
 
 -- ========== CLEANUP (END KEY) ==========
 local function Cleanup()
@@ -249,7 +249,6 @@ local function getPredictedPosition(part, config)
     end
 end
 
--- WORKING CAMLOCK (with freeze fix)
 local function applyCameraLock()
     if not camlockEnabled then return end
 
@@ -283,6 +282,26 @@ local function applyCameraLock()
     local smooth = Config['Camera Lock']['Smoothing']
     local alpha = 1 / smooth
     Camera.CFrame = camCF:Lerp(targetCF, math.min(alpha, 1))
+end
+
+-- ========== ANIMATION FREEZE FIX: simulate MoveDirection ==========
+local function updateMoveDirection()
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+    if not humanoid or not Camera then return end
+
+    local move = Vector3.zero
+    -- Adjust keys if you use different bindings (e.g., arrow keys)
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += Camera.CFrame.LookVector  end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= Camera.CFrame.LookVector  end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += Camera.CFrame.RightVector end
+
+    move = Vector3.new(move.X, 0, move.Z)   -- keep it flat
+    if move.Magnitude > 0 then
+        humanoid.MoveDirection = move.Unit
+    else
+        humanoid.MoveDirection = Vector3.zero
+    end
 end
 
 -- ========== DRAWING OBJECTS ==========
@@ -519,13 +538,13 @@ RunService.RenderStepped:Connect(function()
     else snaplineDrawing.Visible = false end
 
     applyCameraLock()
+    updateMoveDirection()   -- ANIMATION FREEZE FIX
 end)
 
 -- ========== INPUT HANDLING ==========
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
 
-    -- Master destroy
     if input.KeyCode == Enum.KeyCode.End then
         Cleanup()
         return
@@ -577,13 +596,13 @@ UserInputService.InputBegan:Connect(function(input, processed)
             Camera.CameraType = Enum.CameraType.Scriptable
             if hum then
                 originalAutoRotate = hum.AutoRotate
-                hum.AutoRotate = false          -- freeze fix
+                hum.AutoRotate = false
             end
             print("Camlock ON")
         else
             Camera.CameraType = Enum.CameraType.Custom
             if hum then
-                hum.AutoRotate = originalAutoRotate   -- restore
+                hum.AutoRotate = originalAutoRotate
             end
             print("Camlock OFF")
         end
