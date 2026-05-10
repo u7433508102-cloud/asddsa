@@ -22,6 +22,8 @@ local camlockEnabled = false
 local camlockTarget = nil
 local snaplineDrawing = nil
 
+local originalAutoRotate = true         -- for freeze fix
+
 -- ========== CLEANUP (END KEY) ==========
 local function Cleanup()
     cheatActive = false
@@ -36,16 +38,19 @@ local function Cleanup()
     camlockTarget = nil
     triggerEnabled = false
 
-    -- Restore camera type if we changed it
+    -- Restore camera and AutoRotate
     pcall(function()
         if Camera then
             Camera.CameraType = Enum.CameraType.Custom
         end
     end)
-
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    if hum then hum.WalkSpeed = 16 end
+    if hum then
+        hum.WalkSpeed = 16
+        hum.AutoRotate = originalAutoRotate
+    end
 
+    -- Kill all drawings
     if fovBox then pcall(function() fovBox:Remove() end) end
     if snaplineDrawing then pcall(function() snaplineDrawing:Remove() end) end
     for _, esp in pairs(espLabels) do
@@ -53,8 +58,10 @@ local function Cleanup()
     end
     espLabels = {}
 
+    -- Destroy GUI
     pcall(function() gui:Destroy() end)
 
+    -- Try to restore old metatable
     pcall(function()
         local mt = getrawmetatable(game)
         if mt and oldIndex then
@@ -242,13 +249,16 @@ local function getPredictedPosition(part, config)
     end
 end
 
+-- WORKING CAMLOCK (with freeze fix)
 local function applyCameraLock()
     if not camlockEnabled then return end
+
     if isSelfKnocked() then
         camlockTarget = nil
         return
     end
-    -- Validate current camlock target
+
+    -- Validate current target
     if camlockTarget then
         local char = camlockTarget.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -257,7 +267,8 @@ local function applyCameraLock()
             camlockTarget = nil
         end
     end
-    -- Find new target if needed
+
+    -- Lock onto new target if needed
     if not camlockTarget then
         camlockTarget = findCamlockTarget()
     end
@@ -396,7 +407,8 @@ local function addESPToPlayer(player)
     if player == LocalPlayer then return end
     local esp = { player = player, nameTag = Drawing.new("Text") }
     esp.nameTag.Size = 14; esp.nameTag.Center = true; esp.nameTag.Outline = true
-    esp.nameTag.OutlineColor = Color3.new(0,0,0); esp.nameTag.Color = Config['Visual Awareness']['Color']
+    esp.nameTag.OutlineColor = Color3.fromRGB(0, 0, 0)
+    esp.nameTag.Color = Config['Visual Awareness']['Color']
     esp.nameTag.Visible = false; esp.nameTag.ZIndex = 1000
     espLabels[player.UserId] = esp
 end
@@ -513,6 +525,7 @@ end)
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
 
+    -- Master destroy
     if input.KeyCode == Enum.KeyCode.End then
         Cleanup()
         return
@@ -559,12 +572,19 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Camera Lock']] then
         camlockEnabled = not camlockEnabled
         camlockTarget = nil
-        -- CRITICAL FIX: make camera Scriptable so our CFrame changes actually stick
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
         if camlockEnabled then
             Camera.CameraType = Enum.CameraType.Scriptable
+            if hum then
+                originalAutoRotate = hum.AutoRotate
+                hum.AutoRotate = false          -- freeze fix
+            end
             print("Camlock ON")
         else
             Camera.CameraType = Enum.CameraType.Custom
+            if hum then
+                hum.AutoRotate = originalAutoRotate   -- restore
+            end
             print("Camlock OFF")
         end
     end
@@ -582,7 +602,7 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function() task.wait(1) end)
 
--- Infinite Range
+-- ========== INFINITE RANGE ==========
 local infRangeActive = false
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
