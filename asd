@@ -10,7 +10,8 @@ local Mouse = LocalPlayer:GetMouse()
 local currentTarget = nil
 local isLocking = false
 local triggerEnabled = false
-local fovBox = nil
+local silentFovCircle = nil
+local camlockFovCircle = nil
 local espLabels = {}
 local SpeedEnabled = false
 local BaseSpeed = 16
@@ -109,31 +110,18 @@ local function getClosestBodyPart(character)
     return closestPart
 end
 
-local function isMouseInFOV(character)
-    if not Config['FOV']['Enabled'] then return true end
-    if not character then return false end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    local head = character:FindFirstChild("Head")
-    if not rootPart or not head then return false end
-    local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-    local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
-    if not headOnScreen or not legOnScreen then return false end
-    local height = math.abs(headPos.Y - legPos.Y)
-    local width = height / 2
-    local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
-    local padding = 10
-    local topLeftX = rootPos.X - width/2 - padding
-    local topLeftY = headPos.Y - padding
-    local bottomRightX = rootPos.X + width/2 + padding
-    local bottomRightY = legPos.Y + padding
+-- Circle FOV check (common for both)
+local function isMouseInCircleFOV(radius)
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    return mousePos.X >= topLeftX and mousePos.X <= bottomRightX and mousePos.Y >= topLeftY and mousePos.Y <= bottomRightY
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    return (mousePos - screenCenter).Magnitude <= radius
 end
 
--- Target selection for silent aim (closest to screen center)
+-- Target selection for silent aim
 local function findClosestTarget()
     local closestTarget = nil
     local shortestDistance = math.huge
+    local fovConfig = Config['Silent Aim FOV']
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             if not isPlayerKnockedOrKO(player) then
@@ -145,7 +133,9 @@ local function findClosestTarget()
                 end
                 if targetPart and canSeeTarget(targetPart) then
                     local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                    if isMouseInFOV(player.Character) then
+                    if fovConfig.Enabled and not isMouseInCircleFOV(fovConfig.Radius) then
+                        -- outside FOV, skip
+                    else
                         local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
                         local dist = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
                         if dist < shortestDistance then
@@ -164,16 +154,21 @@ end
 local function findCamlockTarget()
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local bestPlayer, bestDist = nil, math.huge
+    local fovConfig = Config['Camera Lock FOV']
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             if not isPlayerKnockedOrKO(player) then
                 local part = player.Character:FindFirstChild("HumanoidRootPart")
                 if part and canSeeTarget(part) then
-                    local screenPos = Camera:WorldToViewportPoint(part.Position)
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPlayer = player
+                    if fovConfig.Enabled and not isMouseInCircleFOV(fovConfig.Radius) then
+                        -- outside FOV, skip
+                    else
+                        local screenPos = Camera:WorldToViewportPoint(part.Position)
+                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                        if dist < bestDist then
+                            bestDist = dist
+                            bestPlayer = player
+                        end
                     end
                 end
             end
@@ -199,6 +194,7 @@ end
 
 local function applyCameraLock()
     if not camlockEnabled then return end
+    if not Config['Camera Lock']['Enabled'] then return end
     if isSelfKnocked() then
         camlockTarget = nil
         return
@@ -227,46 +223,54 @@ local function applyCameraLock()
     Camera.CFrame = camCF:Lerp(targetCF, math.min(alpha, 1))
 end
 
--- ========== DRAWING OBJECTS ==========
-if not fovBox then
-    fovBox = Drawing.new("Square")
-    fovBox.Visible = false
-    fovBox.Thickness = Config['FOV']['Thickness']
-    fovBox.Color = Config['FOV']['Color']
-    fovBox.Filled = false
-    fovBox.Size = Vector2.new(0, 0)
+-- ========== DRAWING OBJECTS (CIRCLES) ==========
+if not silentFovCircle then
+    silentFovCircle = Drawing.new("Circle")
+    silentFovCircle.Visible = false
+    silentFovCircle.Thickness = Config['Silent Aim FOV']['Thickness']
+    silentFovCircle.Color = Config['Silent Aim FOV']['Color']
+    silentFovCircle.Filled = false
+    silentFovCircle.NumSides = 100   -- smooth circle
+    silentFovCircle.Radius = Config['Silent Aim FOV']['Radius']
+    silentFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 end
 
-local function updateFOVBox()
-    if not Config['FOV']['Enabled'] or not Config['FOV']['Visible'] then
-        fovBox.Visible = false
-        return
-    end
-    if currentTarget then
-        local character = currentTarget.Parent
-        if character then
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            local head = character:FindFirstChild("Head")
-            if rootPart and head then
-                local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-                local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
-                if headOnScreen and legOnScreen then
-                    local height = math.abs(headPos.Y - legPos.Y)
-                    local width = height / 2
-                    local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
-                    local padding = 10
-                    local topLeft = Vector2.new(rootPos.X - width/2 - padding, headPos.Y - padding)
-                    fovBox.Size = Vector2.new(width + padding * 2, height + padding * 2)
-                    fovBox.Position = topLeft
-                    fovBox.Visible = true
-                    return
-                end
-            end
-        end
-    end
-    fovBox.Visible = false
+if not camlockFovCircle then
+    camlockFovCircle = Drawing.new("Circle")
+    camlockFovCircle.Visible = false
+    camlockFovCircle.Thickness = Config['Camera Lock FOV']['Thickness']
+    camlockFovCircle.Color = Config['Camera Lock FOV']['Color']
+    camlockFovCircle.Filled = false
+    camlockFovCircle.NumSides = 100
+    camlockFovCircle.Radius = Config['Camera Lock FOV']['Radius']
+    camlockFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 end
 
+local function updateFOVCircles()
+    local silentCfg = Config['Silent Aim FOV']
+    if silentCfg.Enabled and silentCfg.Visible then
+        silentFovCircle.Visible = true
+        silentFovCircle.Radius = silentCfg.Radius
+        silentFovCircle.Color = silentCfg.Color
+        silentFovCircle.Thickness = silentCfg.Thickness
+        silentFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    else
+        silentFovCircle.Visible = false
+    end
+
+    local camCfg = Config['Camera Lock FOV']
+    if camCfg.Enabled and camCfg.Visible then
+        camlockFovCircle.Visible = true
+        camlockFovCircle.Radius = camCfg.Radius
+        camlockFovCircle.Color = camCfg.Color
+        camlockFovCircle.Thickness = camCfg.Thickness
+        camlockFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    else
+        camlockFovCircle.Visible = false
+    end
+end
+
+-- ========== TRIGGERBOT ==========
 local function TriggerBot()
     if not Config['Trigger Bot']['Enabled'] then return end
     if not triggerEnabled then return end
@@ -278,7 +282,10 @@ local function TriggerBot()
     if not player then return end
     if isPlayerKnockedOrKO(player) then return end
     if not canSeeTarget(currentTarget) then return end
-    if Config['FOV']['Enabled'] and not isMouseInFOV(character) then return end
+    -- Triggerbot also respects Silent Aim FOV if enabled
+    if Config['Silent Aim FOV']['Enabled'] and not isMouseInCircleFOV(Config['Silent Aim FOV']['Radius']) then
+        return
+    end
     local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
     if not tool then return end
     if Config['Trigger Bot']['Specific Weapons']['Enabled'] then
@@ -296,11 +303,10 @@ local function TriggerBot()
     lastTriggerClick = tick()
 end
 
--- ========== UNIVERSAL SILENT AIM HOOK (raw metatable, like Gloryv3) ==========
+-- ========== UNIVERSAL SILENT AIM HOOK ==========
 local oldIndex = getrawmetatable(game).__index
 setreadonly(getrawmetatable(game), false)
 getrawmetatable(game).__index = function(self, key)
-    -- Only intercept when silent aim is enabled and the caller is a Mouse
     if not checkcaller() and Config['Silent Aim']['Enabled'] and self:IsA("Mouse") then
         if key == "Hit" or key == "Target" then
             if currentTarget then
@@ -308,13 +314,13 @@ getrawmetatable(game).__index = function(self, key)
                 if char then
                     local player = Players:GetPlayerFromCharacter(char)
                     if player and not isPlayerKnockedOrKO(player) and canSeeTarget(currentTarget) then
-                        if not Config['FOV']['Enabled'] or isMouseInFOV(char) then
+                        if Config['Silent Aim FOV']['Enabled'] and not isMouseInCircleFOV(Config['Silent Aim FOV']['Radius']) then
+                            -- outside FOV, don't aim
+                        else
                             if key == "Hit" then
-                                -- Apply prediction if enabled, otherwise return raw position
                                 local hitPos = getPredictedPosition(currentTarget, Config['Silent Aim'])
                                 return CFrame.new(hitPos)
                             else
-                                -- Return the target part instance
                                 return currentTarget
                             end
                         end
@@ -326,7 +332,7 @@ getrawmetatable(game).__index = function(self, key)
     return oldIndex(self, key)
 end
 
--- ========== SPREAD HOOK ==========
+-- ========== SPREAD HOOK (unchanged) ==========
 local oldRandom
 oldRandom = hookfunction(math.random, function(...)
     local args = {...}
@@ -358,7 +364,7 @@ oldRandom = hookfunction(math.random, function(...)
     return oldRandom(...)
 end)
 
--- ========== ESP ==========
+-- ========== ESP (unchanged) ==========
 local function addESPToPlayer(player)
     if player == LocalPlayer then return end
     local esp = {
@@ -481,7 +487,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ========== SNAPLINE DRAWING ==========
+-- ========== SNAPLINE ==========
 if not snaplineDrawing then
     snaplineDrawing = Drawing.new("Line")
     snaplineDrawing.Visible = false
@@ -587,7 +593,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    updateFOVBox()
+    updateFOVCircles()
     refreshESP()
 
     if Config['Snapline']['Enabled'] and currentTarget then
@@ -681,8 +687,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 
     if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Camera Lock']] then
-        camlockEnabled = not camlockEnabled
-        camlockTarget = nil
+        if Config['Camera Lock']['Enabled'] then
+            camlockEnabled = not camlockEnabled
+            camlockTarget = nil
+        end
     end
 end)
 
@@ -773,66 +781,68 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== GUI ==========
-local gui = Instance.new("ScreenGui")
-gui.Parent = game.CoreGui
+-- ========== GUI (Status Text) ==========
+if Config['UI'] and Config['UI']['Enabled'] then
+    local gui = Instance.new("ScreenGui")
+    gui.Parent = game.CoreGui
 
-local text = Instance.new("TextLabel")
-text.Parent = gui
-text.AnchorPoint = Vector2.new(0.5, 1)
-text.Position = UDim2.new(0.5, 0, 1, -110)
-text.Size = UDim2.new(0, 260, 0, 180)
-text.BackgroundTransparency = 1
-text.TextXAlignment = Enum.TextXAlignment.Center
-text.TextYAlignment = Enum.TextYAlignment.Bottom
-text.Font = Enum.Font.Arial
-text.TextSize = 19
-text.RichText = true
-text.TextStrokeTransparency = 0
-text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    local text = Instance.new("TextLabel")
+    text.Parent = gui
+    text.AnchorPoint = Vector2.new(0.5, 1)
+    text.Position = UDim2.new(0.5, 0, 1, -110)
+    text.Size = UDim2.new(0, 260, 0, 180)
+    text.BackgroundTransparency = 1
+    text.TextXAlignment = Enum.TextXAlignment.Center
+    text.TextYAlignment = Enum.TextYAlignment.Bottom
+    text.Font = Enum.Font.Arial
+    text.TextSize = 19
+    text.RichText = true
+    text.TextStrokeTransparency = 0
+    text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 
-game:GetService("RunService").RenderStepped:Connect(function()
-    local lines = {}
-    table.insert(lines, '<b><font color="rgb(102,178,255)">2349.wtf</font></b>')
+    game:GetService("RunService").RenderStepped:Connect(function()
+        local lines = {}
+        table.insert(lines, '<b><font color="rgb(102,178,255)">2349.wtf</font></b>')
 
-    if SpeedEnabled then
-        table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font><font color="rgb(102,178,255)"> [ON]</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font>')
-    end
-
-    if Config["Silent Aim"]["Enabled"] and currentTarget then
-        local targetName = ""
-        local targetChar = currentTarget.Parent
-        if targetChar then
-            local player = Players:GetPlayerFromCharacter(targetChar)
-            if player then
-                targetName = player.DisplayName ~= "" and player.DisplayName or player.Name
-            end
+        if SpeedEnabled then
+            table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font><font color="rgb(102,178,255)"> [ON]</font>')
+        else
+            table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font>')
         end
-        table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font><font color="rgb(102,178,255)"> [ ' .. targetName .. ' ]</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font>')
-    end
 
-    if Config["Trigger Bot"]["Enabled"] and triggerEnabled then
-        table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font><font color="rgb(102,178,255)"> [ON]</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font>')
-    end
+        if Config["Silent Aim"]["Enabled"] and currentTarget then
+            local targetName = ""
+            local targetChar = currentTarget.Parent
+            if targetChar then
+                local player = Players:GetPlayerFromCharacter(targetChar)
+                if player then
+                    targetName = player.DisplayName ~= "" and player.DisplayName or player.Name
+                end
+            end
+            table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font><font color="rgb(102,178,255)"> [ ' .. targetName .. ' ]</font>')
+        else
+            table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font>')
+        end
 
-    if infRangeActive then
-        table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font><font color="rgb(102,178,255)"> [ON]</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font>')
-    end
+        if Config["Trigger Bot"]["Enabled"] and triggerEnabled then
+            table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font><font color="rgb(102,178,255)"> [ON]</font>')
+        else
+            table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font>')
+        end
 
-    if camlockEnabled then
-        local name = camlockTarget and (camlockTarget.DisplayName ~= "" and camlockTarget.DisplayName or camlockTarget.Name) or "none"
-        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font><font color="rgb(102,178,255)"> [' .. name .. ']</font>')
-    else
-        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font>')
-    end
+        if infRangeActive then
+            table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font><font color="rgb(102,178,255)"> [ON]</font>')
+        else
+            table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font>')
+        end
 
-    text.Text = table.concat(lines, "\n")
-end)
+        if camlockEnabled then
+            local name = camlockTarget and (camlockTarget.DisplayName ~= "" and camlockTarget.DisplayName or camlockTarget.Name) or "none"
+            table.insert(lines, '<font color="rgb(255,255,255)">camlock</font><font color="rgb(102,178,255)"> [' .. name .. ']</font>')
+        else
+            table.insert(lines, '<font color="rgb(255,255,255)">camlock</font>')
+        end
+
+        text.Text = table.concat(lines, "\n")
+    end)
+end
