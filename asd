@@ -1,4 +1,3 @@
--- ================== SCRIPT CODE ==================
 local Config = shared.Xanax
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -122,7 +121,7 @@ local function isMouseInFOV(character)
     local height = math.abs(headPos.Y - legPos.Y)
     local width = height / 2
     local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
-    local padding = Config['FOV']['BoxSize'] or 10
+    local padding = 10
     local topLeftX = rootPos.X - width/2 - padding
     local topLeftY = headPos.Y - padding
     local bottomRightX = rootPos.X + width/2 + padding
@@ -161,7 +160,7 @@ local function findClosestTarget()
     return closestTarget
 end
 
--- Camlock target finder (respects FOV)
+-- Camlock target finder
 local function findCamlockTarget()
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local bestPlayer, bestDist = nil, math.huge
@@ -170,15 +169,11 @@ local function findCamlockTarget()
             if not isPlayerKnockedOrKO(player) then
                 local part = player.Character:FindFirstChild("HumanoidRootPart")
                 if part and canSeeTarget(part) then
-                    if Config['FOV']['Enabled'] and not isMouseInFOV(player.Character) then
-                        -- not inside FOV, skip this player
-                    else
-                        local screenPos = Camera:WorldToViewportPoint(part.Position)
-                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                        if dist < bestDist then
-                            bestDist = dist
-                            bestPlayer = player
-                        end
+                    local screenPos = Camera:WorldToViewportPoint(part.Position)
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestPlayer = player
                     end
                 end
             end
@@ -204,7 +199,6 @@ end
 
 local function applyCameraLock()
     if not camlockEnabled then return end
-    if not Config['Camera Lock']['Enabled'] then return end -- master switch off
     if isSelfKnocked() then
         camlockTarget = nil
         return
@@ -260,7 +254,7 @@ local function updateFOVBox()
                     local height = math.abs(headPos.Y - legPos.Y)
                     local width = height / 2
                     local rootPos = Camera:WorldToViewportPoint(rootPart.Position)
-                    local padding = Config['FOV']['BoxSize'] or 10
+                    local padding = 10
                     local topLeft = Vector2.new(rootPos.X - width/2 - padding, headPos.Y - padding)
                     fovBox.Size = Vector2.new(width + padding * 2, height + padding * 2)
                     fovBox.Position = topLeft
@@ -302,10 +296,11 @@ local function TriggerBot()
     lastTriggerClick = tick()
 end
 
--- ========== UNIVERSAL SILENT AIM HOOK ==========
+-- ========== UNIVERSAL SILENT AIM HOOK (raw metatable, like Gloryv3) ==========
 local oldIndex = getrawmetatable(game).__index
 setreadonly(getrawmetatable(game), false)
 getrawmetatable(game).__index = function(self, key)
+    -- Only intercept when silent aim is enabled and the caller is a Mouse
     if not checkcaller() and Config['Silent Aim']['Enabled'] and self:IsA("Mouse") then
         if key == "Hit" or key == "Target" then
             if currentTarget then
@@ -315,9 +310,11 @@ getrawmetatable(game).__index = function(self, key)
                     if player and not isPlayerKnockedOrKO(player) and canSeeTarget(currentTarget) then
                         if not Config['FOV']['Enabled'] or isMouseInFOV(char) then
                             if key == "Hit" then
+                                -- Apply prediction if enabled, otherwise return raw position
                                 local hitPos = getPredictedPosition(currentTarget, Config['Silent Aim'])
                                 return CFrame.new(hitPos)
                             else
+                                -- Return the target part instance
                                 return currentTarget
                             end
                         end
@@ -684,10 +681,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 
     if input.KeyCode == Enum.KeyCode[Config['Keybinds']['Camera Lock']] then
-        if Config['Camera Lock']['Enabled'] then -- master switch must be on
-            camlockEnabled = not camlockEnabled
-            camlockTarget = nil
-        end
+        camlockEnabled = not camlockEnabled
+        camlockTarget = nil
     end
 end)
 
@@ -778,68 +773,66 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== GUI (Status Text) ==========
-if Config['UI'] and Config['UI']['Enabled'] then
-    local gui = Instance.new("ScreenGui")
-    gui.Parent = game.CoreGui
+-- ========== GUI ==========
+local gui = Instance.new("ScreenGui")
+gui.Parent = game.CoreGui
 
-    local text = Instance.new("TextLabel")
-    text.Parent = gui
-    text.AnchorPoint = Vector2.new(0.5, 1)
-    text.Position = UDim2.new(0.5, 0, 1, -110)
-    text.Size = UDim2.new(0, 260, 0, 180)
-    text.BackgroundTransparency = 1
-    text.TextXAlignment = Enum.TextXAlignment.Center
-    text.TextYAlignment = Enum.TextYAlignment.Bottom
-    text.Font = Enum.Font.Arial
-    text.TextSize = 19
-    text.RichText = true
-    text.TextStrokeTransparency = 0
-    text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+local text = Instance.new("TextLabel")
+text.Parent = gui
+text.AnchorPoint = Vector2.new(0.5, 1)
+text.Position = UDim2.new(0.5, 0, 1, -110)
+text.Size = UDim2.new(0, 260, 0, 180)
+text.BackgroundTransparency = 1
+text.TextXAlignment = Enum.TextXAlignment.Center
+text.TextYAlignment = Enum.TextYAlignment.Bottom
+text.Font = Enum.Font.Arial
+text.TextSize = 19
+text.RichText = true
+text.TextStrokeTransparency = 0
+text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 
-    game:GetService("RunService").RenderStepped:Connect(function()
-        local lines = {}
-        table.insert(lines, '<b><font color="rgb(102,178,255)">2349.wtf</font></b>')
+game:GetService("RunService").RenderStepped:Connect(function()
+    local lines = {}
+    table.insert(lines, '<b><font color="rgb(102,178,255)">2349.wtf</font></b>')
 
-        if SpeedEnabled then
-            table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font><font color="rgb(102,178,255)"> [ON]</font>')
-        else
-            table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font>')
-        end
+    if SpeedEnabled then
+        table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font><font color="rgb(102,178,255)"> [ON]</font>')
+    else
+        table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font>')
+    end
 
-        if Config["Silent Aim"]["Enabled"] and currentTarget then
-            local targetName = ""
-            local targetChar = currentTarget.Parent
-            if targetChar then
-                local player = Players:GetPlayerFromCharacter(targetChar)
-                if player then
-                    targetName = player.DisplayName ~= "" and player.DisplayName or player.Name
-                end
+    if Config["Silent Aim"]["Enabled"] and currentTarget then
+        local targetName = ""
+        local targetChar = currentTarget.Parent
+        if targetChar then
+            local player = Players:GetPlayerFromCharacter(targetChar)
+            if player then
+                targetName = player.DisplayName ~= "" and player.DisplayName or player.Name
             end
-            table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font><font color="rgb(102,178,255)"> [ ' .. targetName .. ' ]</font>')
-        else
-            table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font>')
         end
+        table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font><font color="rgb(102,178,255)"> [ ' .. targetName .. ' ]</font>')
+    else
+        table.insert(lines, '<font color="rgb(255,255,255)">silent-aim</font>')
+    end
 
-        if Config["Trigger Bot"]["Enabled"] and triggerEnabled then
-            table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font><font color="rgb(102,178,255)"> [ON]</font>')
-        else
-            table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font>')
-        end
+    if Config["Trigger Bot"]["Enabled"] and triggerEnabled then
+        table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font><font color="rgb(102,178,255)"> [ON]</font>')
+    else
+        table.insert(lines, '<font color="rgb(255,255,255)">trigger-bot</font>')
+    end
 
-        if infRangeActive then
-            table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font><font color="rgb(102,178,255)"> [ON]</font>')
-        else
-            table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font>')
-        end
+    if infRangeActive then
+        table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font><font color="rgb(102,178,255)"> [ON]</font>')
+    else
+        table.insert(lines, '<font color="rgb(255,255,255)">infinite-range</font>')
+    end
 
-        if camlockEnabled then
-            local name = camlockTarget and (camlockTarget.DisplayName ~= "" and camlockTarget.DisplayName or camlockTarget.Name) or "none"
-            table.insert(lines, '<font color="rgb(255,255,255)">camlock</font><font color="rgb(102,178,255)"> [' .. name .. ']</font>')
-        else
-            table.insert(lines, '<font color="rgb(255,255,255)">camlock</font>')
-        end
+    if camlockEnabled then
+        local name = camlockTarget and (camlockTarget.DisplayName ~= "" and camlockTarget.DisplayName or camlockTarget.Name) or "none"
+        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font><font color="rgb(102,178,255)"> [' .. name .. ']</font>')
+    else
+        table.insert(lines, '<font color="rgb(255,255,255)">camlock</font>')
+    end
 
-        text.Text = table.concat(lines, "\n")
-    end)
-end
+    text.Text = table.concat(lines, "\n")
+end)
