@@ -802,7 +802,7 @@ if Config['UI'] and Config['UI']['Enabled'] then
 
     game:GetService("RunService").RenderStepped:Connect(function()
         local lines = {}
-        table.insert(lines, '<b><font color="rgb(102,178,255)">2349.wtf</font></b>')
+        table.insert(lines, '<b><font color="rgb(102,178,255)">Xanax.wtf</font></b>')
 
         if SpeedEnabled then
             table.insert(lines, '<font color="rgb(255,255,255)">speed-walk</font><font color="rgb(102,178,255)"> [ON]</font>')
